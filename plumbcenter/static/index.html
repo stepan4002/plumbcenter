@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PlumbCenter</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>PlumbCenter</h1>
+      <p class="sub">One hub for the Plumbnote open-source apps</p>
+    </div>
+    <div class="head-actions">
+      <button id="btn-remote" type="button">Check GitHub</button>
+      <button id="btn-refresh" type="button">Refresh</button>
+    </div>
+  </header>
+  <main id="grid" aria-live="polite"></main>
+
+  <dialog id="modal">
+    <div class="modal-head"><strong id="modal-title"></strong><button id="modal-close" type="button">Close</button></div>
+    <pre id="modal-body"></pre>
+  </dialog>
+  <div id="toast" role="status"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
