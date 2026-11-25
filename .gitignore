@@ -1,3 +1,7 @@
 .plumbcenter/
 __pycache__/
 *.pyc
+.worktrees/
+dist/
+build/
+*.spec.bak
