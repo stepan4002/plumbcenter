@@ -31,5 +31,5 @@ Tick each box before tagging `v1.0.0`. "Auto" items are covered by CI or `pytest
 
 ## Repo hygiene
 - [ ] `CHANGELOG.md` 1.0.0 entry matches what shipped; README screenshots current
-- [ ] Legacy web hub (`web.py`, `static/`, `serve`) removed or explicitly kept for 1.0
+- [x] Legacy web hub (`web.py`, `static/`, `serve`) removed
 - [ ] Tag `v1.0.0` on main after the release PR is merged (never push to main directly)

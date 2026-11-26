@@ -33,7 +33,6 @@ plumbcenter gui
 | `plumbcenter start` / `stop` / `ps` / `logs` / `open` | Long-running actions |
 | `plumbcenter providers list [--json]` | Providers. Keys are never printed |
 | `plumbcenter providers set-default <app> <provider\|none>` | Per-app default provider |
-| `plumbcenter serve` | Legacy local web hub. It stays until the desktop build replaces it |
 
 Exit codes: `0` ok, `1` the command failed, `2` usage error or unknown app.
 
