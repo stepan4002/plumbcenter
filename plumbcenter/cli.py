@@ -24,12 +24,6 @@ def _load_runner():
     return _runner
 
 
-def _load_web():
-    """Lazy import of web (worker-2 module)."""
-    from . import web as _web
-    return _web
-
-
 def _table(headers: List[str], rows: List[List[str]]) -> str:
     """Render a plain-ASCII table (no unicode box chars)."""
     widths = [len(h) for h in headers]
@@ -260,7 +254,7 @@ def _cmd_open(args) -> int:
 
 
 def _cmd_gui(args) -> int:
-    """Launch the native desktop hub. The web `serve` command stays until the GUI is accepted."""
+    """Launch the native desktop hub."""
     try:
         from .gui.app import main as gui_main
     except Exception as exc:
@@ -328,15 +322,6 @@ def _cmd_providers_set_default(args) -> int:
     return 0
 
 
-def _cmd_serve(args) -> int:
-    web_mod = _load_web()
-    try:
-        web_mod.serve(host="127.0.0.1", port=args.port, root=discovery.hub_root(args.root))
-    except OSError as e:
-        return _fail(f"cannot start server on port {args.port}: {e}")
-    return 0
-
-
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="plumbcenter", description="PlumbCenter hub CLI")
     parser.add_argument("--root", dest="root", default=None, help="override hub root directory")
@@ -389,10 +374,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     p = sub.add_parser("open", help="open an app")
     p.add_argument("app", help="app id")
     p.set_defaults(func=_cmd_open)
-
-    p = sub.add_parser("serve", help="start the web hub")
-    p.add_argument("--port", type=int, default=8765, help="port (default: 8765)")
-    p.set_defaults(func=_cmd_serve)
 
     p = sub.add_parser("gui", help="open the desktop hub")
     p.set_defaults(func=_cmd_gui)

@@ -18,9 +18,12 @@
 
 - Package version is 1.0.0. Dependencies are PySide6-Essentials and keyring.
 
+### Removed
+
+- The legacy local web hub: `plumbcenter serve`, `web.py`, `static/` and its tests. The hub is native-only. Per-app start and stop of registry `serve` actions (for example PlumbCheck Studio) is unchanged.
+
 ### Known limitations
 
-- The legacy local web hub (`plumbcenter serve`, `web.py`, `static/`) is still present in this release line and is slated for removal.
 - Kilo's `GET /models` is public, so a 200 does not prove the key is valid. Z.ai documents no models-list endpoint, so its test probes `GET /models` and the default model is `glm-4.6`.
 - PlumbScout does not read `~/.plumbnote/providers.json` yet.
 - The Windows build warns that optional Qt6WebEngine, Pdf and VirtualKeyboard DLLs are absent from PySide6-Essentials. The window launches; the hub uses none of them.
