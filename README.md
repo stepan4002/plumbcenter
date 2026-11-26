@@ -81,6 +81,7 @@ sentinel `sk-test-SENTINEL`.
 - Only registry URLs are cloned, and nothing runs through a shell.
 - `update` refuses a dirty checkout and only fast-forwards.
 - `setup_venv` creates `<app>/.venv` and, when `requirements.txt` exists, runs `pip install -r` on that file. It does not run other scripts.
-- The legacy web hub binds to `127.0.0.1` only.
+- The hub opens no network listener. Long-running apps you start (for example PlumbCheck Studio) are separate processes that choose their own port.
+- Logs can hold private launch links. The hub never shows them in lists, and you should keep logs private.
 
 Built by [Plumbnote](https://plumbnote.com).
