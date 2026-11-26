@@ -1,0 +1,279 @@
+"""Main window for PlumbCenter: Creative-Cloud-style left sidebar + stacked pages."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+from PySide6.QtCore import QSettings, Qt, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtWidgets import (
+    QApplication,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from .. import __version__
+from ..discovery import hub_root
+from .icons import make_brand_icon, make_brand_pixmap, make_nav_icon
+from .pages.apps import AppsPage
+from .pages.diagnostics import DiagnosticsPage
+from .pages.providers import ProvidersPage
+from .pages.settings import SettingsPage
+from .theme import build_stylesheet, get_tokens
+from .widgets.toast import ToastManager
+
+
+NAV_ITEMS: List[Tuple[str, str, str]] = [
+    ("apps", "Apps", "Manage, install, and launch Plumbnote apps (Ctrl+1)"),
+    ("providers", "Providers", "Configure AI providers and per-app defaults (Ctrl+2)"),
+    ("settings", "Settings", "Workspace root, theme, and hub updates (Ctrl+3)"),
+    ("diagnostics", "Diagnostics", "Environment checks and app health report (Ctrl+4)"),
+]
+
+
+class MainWindow(QMainWindow):
+    """Creative-Cloud-style desktop hub main window."""
+
+    theme_changed = Signal(str)
+    workspace_changed = Signal(str)
+
+    def __init__(
+        self,
+        settings: Optional[QSettings] = None,
+        provider_store=None,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.settings = settings or QSettings("Plumbnote", "PlumbCenter")
+        self._theme: str = str(self.settings.value("ui/theme", "dark") or "dark").lower()
+        if self._theme not in ("dark", "light"):
+            self._theme = "dark"
+
+        saved_root = self.settings.value("workspace/root", "")
+        self._workspace_root: Path = Path(str(saved_root)).resolve() if saved_root else hub_root()
+
+        self.setWindowTitle("PlumbCenter — Plumbnote Desktop Hub")
+        self.setWindowIcon(make_brand_icon())
+        self.resize(1180, 760)
+        self.setMinimumSize(900, 600)
+
+        central = QWidget(self)
+        central.setObjectName("centralRoot")
+        self.setCentralWidget(central)
+
+        outer = QVBoxLayout(central)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
+
+        # === Left Sidebar ===
+        self.sidebar = QFrame(central)
+        self.sidebar.setObjectName("sidebar")
+        self.sidebar.setFixedWidth(220)
+        sb_layout = QVBoxLayout(self.sidebar)
+        sb_layout.setContentsMargins(14, 18, 14, 14)
+        sb_layout.setSpacing(8)
+
+        # Brand block
+        brand_row = QHBoxLayout()
+        brand_row.setSpacing(10)
+        logo_lbl = QLabel(self.sidebar)
+        logo_lbl.setPixmap(make_brand_pixmap(36))
+        logo_lbl.setFixedSize(36, 36)
+        brand_row.addWidget(logo_lbl)
+
+        brand_text = QVBoxLayout()
+        brand_text.setSpacing(1)
+        title_lbl = QLabel("PlumbCenter", self.sidebar)
+        title_lbl.setObjectName("brandTitle")
+        sub_lbl = QLabel("Plumbnote Hub", self.sidebar)
+        sub_lbl.setObjectName("brandSubtitle")
+        brand_text.addWidget(title_lbl)
+        brand_text.addWidget(sub_lbl)
+        brand_row.addLayout(brand_text, 1)
+        sb_layout.addLayout(brand_row)
+
+        divider = QFrame(self.sidebar)
+        divider.setObjectName("sidebarDivider")
+        sb_layout.addSpacing(6)
+        sb_layout.addWidget(divider)
+        sb_layout.addSpacing(6)
+
+        # Nav buttons
+        self.nav_buttons: Dict[str, QPushButton] = {}
+        for idx, (key, label, tip) in enumerate(NAV_ITEMS):
+            btn = QPushButton(f"  {label}", self.sidebar)
+            btn.setProperty("navItem", True)
+            btn.setProperty("active", False)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setToolTip(tip)
+            btn.clicked.connect(lambda _checked=False, k=key: self.navigate(k))
+            sb_layout.addWidget(btn)
+            self.nav_buttons[key] = btn
+
+            shortcut = QShortcut(QKeySequence(f"Ctrl+{idx + 1}"), self)
+            shortcut.activated.connect(lambda k=key: self.navigate(k))
+
+        sb_layout.addStretch(1)
+
+        # Sidebar footer: quick theme toggle + version
+        self.theme_toggle_btn = QPushButton("", self.sidebar)
+        self.theme_toggle_btn.setProperty("variant", "ghost")
+        self.theme_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.theme_toggle_btn.setToolTip("Toggle dark / light theme (Ctrl+T)")
+        self.theme_toggle_btn.clicked.connect(self.toggle_theme)
+        sb_layout.addWidget(self.theme_toggle_btn)
+
+        theme_shortcut = QShortcut(QKeySequence("Ctrl+T"), self)
+        theme_shortcut.activated.connect(self.toggle_theme)
+
+        ver_lbl = QLabel(f"v{__version__}", self.sidebar)
+        ver_lbl.setProperty("role", "muted")
+        ver_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sb_layout.addWidget(ver_lbl)
+
+        body.addWidget(self.sidebar)
+
+        # === Stacked Pages ===
+        self.toast = ToastManager(central)
+
+        self.stack = QStackedWidget(central)
+        self.apps_page = AppsPage(
+            workspace_root=self._workspace_root,
+            toast=self.toast,
+            provider_store=provider_store,
+            on_open_providers=lambda _app_id: self.navigate("providers"),
+            parent=self.stack,
+        )
+        self.providers_page = ProvidersPage(
+            toast=self.toast,
+            provider_store=provider_store,
+            on_defaults_changed=self.apps_page.refresh,
+            parent=self.stack,
+        )
+        self.settings_page = SettingsPage(
+            workspace_root=self._workspace_root,
+            theme_name=self._theme,
+            toast=self.toast,
+            on_workspace_changed=self.set_workspace_root,
+            on_theme_changed=self.set_theme,
+            parent=self.stack,
+        )
+        self.diagnostics_page = DiagnosticsPage(
+            workspace_root=self._workspace_root,
+            toast=self.toast,
+            parent=self.stack,
+        )
+
+        self._pages: Dict[str, QWidget] = {
+            "apps": self.apps_page,
+            "providers": self.providers_page,
+            "settings": self.settings_page,
+            "diagnostics": self.diagnostics_page,
+        }
+        for key, _label, _tip in NAV_ITEMS:
+            self.stack.addWidget(self._pages[key])
+
+        body.addWidget(self.stack, 1)
+        outer.addLayout(body, 1)
+
+        # === Bottom Status Bar ===
+        self.status_bar_frame = QFrame(central)
+        self.status_bar_frame.setObjectName("statusBar")
+        self.status_bar_frame.setFixedHeight(30)
+        st_layout = QHBoxLayout(self.status_bar_frame)
+        st_layout.setContentsMargins(16, 0, 16, 0)
+        self.status_workspace_label = QLabel(f"Workspace: {self._workspace_root}", self.status_bar_frame)
+        self.status_workspace_label.setProperty("role", "muted")
+        self.status_workspace_label.setMinimumWidth(0)
+        st_layout.addWidget(self.status_workspace_label, 1)
+
+        self.status_hint_label = QLabel("Ctrl+1..4 navigate · Ctrl+T theme", self.status_bar_frame)
+        self.status_hint_label.setProperty("role", "muted")
+        st_layout.addWidget(self.status_hint_label)
+        outer.addWidget(self.status_bar_frame)
+
+        # Apply initial theme and page
+        self._active_page = "apps"
+        self.apply_theme(self._theme)
+        self.navigate("apps")
+
+    @property
+    def current_theme(self) -> str:
+        return self._theme
+
+    @property
+    def workspace_root(self) -> Path:
+        return self._workspace_root
+
+    def navigate(self, page_key: str) -> None:
+        if page_key not in self._pages:
+            return
+        self._active_page = page_key
+        self.stack.setCurrentWidget(self._pages[page_key])
+        tokens = get_tokens(self._theme)
+        for key, btn in self.nav_buttons.items():
+            is_active = key == page_key
+            btn.setProperty("active", is_active)
+            btn.setIcon(make_nav_icon(key, tokens.accent if is_active else tokens.text_muted))
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+
+        page = self._pages[page_key]
+        if hasattr(page, "on_activated"):
+            page.on_activated()
+
+    def set_theme(self, theme_name: str) -> None:
+        normalized = "light" if str(theme_name).lower() == "light" else "dark"
+        if normalized == self._theme:
+            return
+        self._theme = normalized
+        self.settings.setValue("ui/theme", normalized)
+        self.settings.sync()
+        self.apply_theme(normalized)
+        self.settings_page.sync_theme(normalized)
+        self.theme_changed.emit(normalized)
+
+    def toggle_theme(self) -> None:
+        self.set_theme("light" if self._theme == "dark" else "dark")
+
+    def apply_theme(self, theme_name: str) -> None:
+        qss = build_stylesheet(theme_name)
+        app = QApplication.instance()
+        if app is not None:
+            app.setStyleSheet(qss)
+        else:
+            self.setStyleSheet(qss)
+
+        tokens = get_tokens(theme_name)
+        if theme_name == "dark":
+            self.theme_toggle_btn.setText("  Light mode")
+            self.theme_toggle_btn.setIcon(make_nav_icon("theme_light", tokens.text_secondary))
+        else:
+            self.theme_toggle_btn.setText("  Dark mode")
+            self.theme_toggle_btn.setIcon(make_nav_icon("theme_dark", tokens.text_secondary))
+
+        for key, btn in self.nav_buttons.items():
+            is_active = key == self._active_page
+            btn.setIcon(make_nav_icon(key, tokens.accent if is_active else tokens.text_muted))
+
+    def set_workspace_root(self, new_root: str) -> None:
+        path = Path(new_root).resolve()
+        self._workspace_root = path
+        self.settings.setValue("workspace/root", str(path))
+        self.settings.sync()
+        self.status_workspace_label.setText(f"Workspace: {path}")
+        self.apps_page.set_workspace_root(path)
+        self.diagnostics_page.set_workspace_root(path)
+        self.settings_page.sync_workspace_root(path)
+        self.workspace_changed.emit(str(path))
