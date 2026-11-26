@@ -39,7 +39,8 @@ class Redactor:
         # Longest first so a key that contains another is replaced whole.
         self._secrets = sorted({s for s in secrets if s and len(s) >= 4}, key=len, reverse=True)
         h = Path(home) if home else Path.home()
-        self._homes = sorted({str(h), str(h).replace("\\", "/")}, key=len, reverse=True)
+        raw = str(h)
+        self._homes = sorted({raw, raw.replace("\\", "/"), raw.replace("/", "\\")}, key=len, reverse=True)
 
     def text(self, value: str) -> str:
         for s in self._secrets:

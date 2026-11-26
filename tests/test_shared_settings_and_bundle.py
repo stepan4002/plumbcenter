@@ -58,15 +58,17 @@ def test_theme_value_is_case_insensitive(tmp_path):
 
 # ---- redaction -------------------------------------------------------------
 
-def test_redactor_scrubs_known_keys_patterns_and_home():
-    home = Path("C:/Users/someone")
+def test_redactor_scrubs_known_keys_patterns_and_home(tmp_path):
+    home = tmp_path / "zzperson"
+    bs = chr(92)
+    fwd, back = str(home).replace(bs, "/"), str(home).replace("/", bs)
     r = db.Redactor([KEY], home=home)
     text = (f"key={KEY} Authorization: Bearer abcdef1234567890 url http://127.0.0.1:5/#auth=deadbeef01 "
             f"api_key=hunter2hunter2 sk-other-ABCDEFGHIJKLMNOP AIzaSyA1234567890123456789012 "
-            f"ghp_abcdefghijklmnopqrstuvwxyz0123 at C:\\Users\\someone\\proj and C:/Users/someone/proj")
+            f"ghp_abcdefghijklmnopqrstuvwxyz0123 at {back}{bs}proj and {fwd}/proj")
     out = r.text(text)
     for leaked in (KEY, "abcdef1234567890", "deadbeef01", "hunter2hunter2", "ABCDEFGHIJKLMNOP",
-                   "AIzaSy", "ghp_abcdef", "someone"):
+                   "AIzaSy", "ghp_abcdef", "zzperson"):
         assert leaked not in out, leaked
     assert "~" in out
 
