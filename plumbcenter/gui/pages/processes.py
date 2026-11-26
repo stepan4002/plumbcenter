@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPlainTextEdit,
     QPushButton,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -72,6 +73,17 @@ class ProcessesPage(QWidget):
         header.addWidget(self.count_badge, 0, Qt.AlignmentFlag.AlignVCenter)
         root.addLayout(header)
 
+        self.splitter = QSplitter(Qt.Orientation.Vertical, self)
+        self.splitter.setChildrenCollapsible(False)
+        top = QWidget(self.splitter)
+        top_lay = QVBoxLayout(top)
+        top_lay.setContentsMargins(0, 0, 0, 0)
+        top_lay.setSpacing(12)
+        bottom = QWidget(self.splitter)
+        bottom_lay = QVBoxLayout(bottom)
+        bottom_lay.setContentsMargins(0, 0, 0, 0)
+        bottom_lay.setSpacing(8)
+
         self.table = QTableWidget(0, len(COLUMNS), self)
         self.table.setAccessibleName("Running processes")
         self.table.setHorizontalHeaderLabels(list(COLUMNS))
@@ -80,9 +92,8 @@ class ProcessesPage(QWidget):
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table.setMaximumHeight(210)
         self.table.itemSelectionChanged.connect(self._on_selection)
-        root.addWidget(self.table)
+        top_lay.addWidget(self.table, 1)
 
         bar = QHBoxLayout()
         bar.setSpacing(8)
@@ -100,18 +111,23 @@ class ProcessesPage(QWidget):
         self.empty_label = QLabel("Nothing is running. Start an app from the Apps page.", self)
         self.empty_label.setProperty("role", "muted")
         bar.addWidget(self.empty_label)
-        root.addLayout(bar)
+        top_lay.addLayout(bar)
 
         self.log_title = QLabel("Log", self)
         self.log_title.setProperty("role", "sectionTitle")
-        root.addWidget(self.log_title)
+        bottom_lay.addWidget(self.log_title)
         self.log = QPlainTextEdit(self)
         self.log.setObjectName("logOutput")
         self.log.setAccessibleName("Selected process log")
         self.log.setReadOnly(True)
         self.log.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.log.setPlaceholderText("Select a process to tail its log.")
-        root.addWidget(self.log, 1)
+        bottom_lay.addWidget(self.log, 1)
+        self.splitter.addWidget(top)
+        self.splitter.addWidget(bottom)
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 2)
+        root.addWidget(self.splitter, 1)
 
         self._timer = QTimer(self)
         self._timer.setInterval(self.POLL_MS)

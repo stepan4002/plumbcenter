@@ -10,3 +10,13 @@ for _k, _v in (
     ("GIT_CONFIG_NOSYSTEM", "1"),
 ):
     os.environ.setdefault(_k, _v)
+
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _isolated_plumbnote_home(tmp_path_factory, monkeypatch):
+    """Never let a test read or write the developer's real ~/.plumbnote (providers.json, settings.json)."""
+    home = tmp_path_factory.mktemp("plumbnote_home_default")   # outside the test's own tmp_path
+    monkeypatch.setenv("PLUMBNOTE_HOME", str(home))
