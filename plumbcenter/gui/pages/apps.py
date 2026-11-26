@@ -121,6 +121,7 @@ class AppsPage(QWidget):
         toolbar.setSpacing(8)
 
         self.search_input = QLineEdit(self)
+        self.search_input.setAccessibleName("Filter apps")
         self.search_input.setPlaceholderText("Filter apps by name or description...")
         self.search_input.setClearButtonEnabled(True)
         self.search_input.setMaximumWidth(320)

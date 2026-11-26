@@ -83,6 +83,7 @@ class SettingsPage(QWidget):
         ws_row = QHBoxLayout()
         ws_row.setSpacing(8)
         self.workspace_input = QLineEdit(str(self._workspace_root), ws_panel)
+        self.workspace_input.setAccessibleName("Workspace folder")
         self.workspace_input.setPlaceholderText("Path to workspace folder")
         ws_row.addWidget(self.workspace_input, 1)
 
