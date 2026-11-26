@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...registry import REGISTRY
+from ...providers import health as provider_health
 from ..tasks import run_in_background
 from ..widgets.badge import Badge
 from ..widgets.provider_card import ProviderCard
@@ -131,6 +132,33 @@ class ProvidersPage(QWidget):
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(0, 4, 8, 16)
         content_layout.setSpacing(18)
+
+        # Provider health + quota summary card
+        health_panel = QFrame(content)
+        health_panel.setProperty("panel", True)
+        health_layout = QVBoxLayout(health_panel)
+        health_layout.setContentsMargins(18, 14, 18, 14)
+        health_layout.setSpacing(8)
+        health_head = QHBoxLayout()
+        health_title = QLabel("Provider health", health_panel)
+        health_title.setProperty("role", "sectionTitle")
+        health_head.addWidget(health_title)
+        self.health_badge = Badge("Not checked", "neutral", parent=health_panel)
+        health_head.addWidget(self.health_badge)
+        health_head.addStretch(1)
+        self.health_btn = QPushButton("Check health", health_panel)
+        self.health_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.health_btn.clicked.connect(self.check_health)
+        health_head.addWidget(self.health_btn)
+        health_layout.addLayout(health_head)
+        self.health_detail = QLabel(
+            "Pings each enabled provider with a cheap authenticated request. "
+            "Quota is shown only where the provider exposes it.", health_panel)
+        self.health_detail.setProperty("role", "muted")
+        self.health_detail.setWordWrap(True)
+        self.health_detail.setAccessibleName("Provider health results")
+        health_layout.addWidget(self.health_detail)
+        content_layout.addWidget(health_panel)
 
         # Providers grid
         grid = QGridLayout()
@@ -246,6 +274,45 @@ class ProvidersPage(QWidget):
                 combo.setCurrentIndex(idx if idx >= 0 else 0)
         finally:
             self._updating_combos = False
+
+    def check_health(self, pinger: Optional[Callable[..., Any]] = None) -> None:
+        if self._store is None or getattr(self, "_health_in_flight", False):
+            return
+        self._health_in_flight = True
+        self.health_btn.setEnabled(False)
+        self.health_badge.set_badge("Pinging...", "neutral")
+        store = self._store
+        ping = pinger if callable(pinger) else provider_health.ping_all
+
+        def _on_ok(entries: Any) -> None:
+            self.show_health(entries)
+
+        def _on_err(msg: str) -> None:
+            self.health_badge.set_badge("Check failed", "danger")
+            self._toast.error(f"Health check failed: {msg}")
+
+        def _on_done() -> None:
+            self._health_in_flight = False
+            self.health_btn.setEnabled(True)
+
+        run_in_background(ping, store, on_success=_on_ok, on_error=_on_err, on_done=_on_done)
+
+    def show_health(self, entries: List[Any]) -> None:
+        summary = provider_health.summarize(entries)
+        if not entries or (summary["ok"] + summary["failed"]) == 0:
+            self.health_badge.set_badge("Nothing to ping", "neutral")
+        elif summary["failed"]:
+            self.health_badge.set_badge(f"{summary['ok']} ok · {summary['failed']} failing", "warning")
+        else:
+            self.health_badge.set_badge(f"{summary['ok']} healthy · avg {summary['avg_latency_ms']} ms", "success")
+        icons = {"ok": "OK", "fail": "FAIL", "skipped": "-"}
+        lines = []
+        for e in entries:
+            if e.state == "skipped":
+                lines.append(f"{e.name}: {e.message}")
+            else:
+                lines.append(f"{icons[e.state]}  {e.name}: {e.latency_ms} ms · {e.message} · quota: {e.quota}")
+        self.health_detail.setText(chr(10).join(lines) or "No providers configured.")
 
     def _on_save_provider(self, provider_id: str, payload: dict) -> None:
         if self._store is None:

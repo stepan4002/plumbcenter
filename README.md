@@ -57,6 +57,17 @@ two limits are noted on the probe result.
 
 See [docs/PROVIDERS-CONTRACT.md](docs/PROVIDERS-CONTRACT.md) for the file format.
 
+## Updates, processes, provider health
+
+- **Updates** checks GitHub Releases for the hub and every app. Update an installed app, install a missing one,
+  or download the hub's release zip (checksum verified when published). Nothing runs without you.
+- **Processes** lists apps you started from the hub: stop, restart, open, and tail the log live.
+- **Providers > Provider health** pings each enabled provider and shows latency; quota appears only where the
+  provider exposes it (OpenRouter today).
+
+Releases: push a `vX.Y.Z` tag and the `Release` workflow builds the Windows exe and publishes it. See
+[CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+
 ## Screenshots
 
 Regenerate with `QT_QPA_PLATFORM=offscreen python scripts/capture_screenshots.py`. The script

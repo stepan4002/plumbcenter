@@ -18,7 +18,7 @@ from .registry import AppSpec, get_app
 from .discovery import hub_root, find_checkout
 
 __all__ = ["RunnerError", "state_dir", "run_action", "start", "stop",
-           "status", "open_app", "tail_log", "get_app", "setup_venv", "health"]
+           "status", "open_app", "tail_log", "get_app", "setup_venv", "health", "restart"]
 
 
 class RunnerError(Exception):
@@ -265,6 +265,12 @@ def stop(app_id, action_name):
         del procs[k]
     _save_procs(procs)
     return {"app": app_id_n, "action": action_name, "stopped": True}
+
+
+def restart(app_id, action_name, root=None):
+    """Stop (if running) then start a serve action. Returns the new start() record."""
+    stop(app_id, action_name)
+    return start(app_id, action_name, root=root)
 
 
 def status(app_id=None):

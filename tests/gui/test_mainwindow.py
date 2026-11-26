@@ -18,7 +18,7 @@ def test_mainwindow_builds_and_navigates(qapp, isolated_settings, temp_workspace
 
     try:
         assert win.windowTitle().startswith("PlumbCenter")
-        assert len(win.nav_buttons) == len(NAV_ITEMS) == 4
+        assert len(win.nav_buttons) == len(NAV_ITEMS) == 6
         assert win.stack.currentWidget() is win.apps_page
 
         for key, _label, _tip in NAV_ITEMS:

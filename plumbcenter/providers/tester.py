@@ -6,6 +6,7 @@ any other host are refused. The key is removed from every result message.
 
 from __future__ import annotations
 
+import json
 import time
 import urllib.error
 import urllib.request
@@ -20,10 +21,12 @@ _LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 
 @dataclass
 class TestResult:
+    __test__ = False  # not a pytest class
     ok: bool
     status: str
     message: str
     latency_ms: int
+    quota: Optional[str] = None   # human-readable credit/limit line, only when the provider exposes one
 
 
 def _redact(message: str, api_key: Optional[str]) -> str:
@@ -111,6 +114,19 @@ def _auth_headers(spec, api_key: str) -> Dict[str, str]:
     return {"Authorization": "Bearer " + api_key}
 
 
+def _openrouter_quota(body: bytes) -> Optional[str]:
+    """OpenRouter GET /key returns {"data": {"usage", "limit", "limit_remaining"}} (USD credits)."""
+    try:
+        data = (json.loads(body.decode("utf-8", "replace")) or {}).get("data") or {}
+        usage, limit, left = data.get("usage"), data.get("limit"), data.get("limit_remaining")
+        if limit is None:
+            return f"${float(usage):.2f} used, no spend limit" if usage is not None else None
+        remaining = float(left) if left is not None else float(limit) - float(usage or 0)
+        return f"${remaining:.2f} left of ${float(limit):.2f}"
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
 def test_connection(spec, api_key, base_url=None, timeout=10.0) -> TestResult:
     """Probe `spec` with a cheap GET. HTTP failures return ok=False and do not raise."""
     key = str(api_key).strip() if api_key else ""
@@ -141,10 +157,11 @@ def test_connection(spec, api_key, base_url=None, timeout=10.0) -> TestResult:
     request = urllib.request.Request(target, headers=headers, method="GET")
     opener = urllib.request.build_opener(_SameHostRedirect(_host(url_base)))
     started = time.monotonic()
+    body = b""
     try:
         with opener.open(request, timeout=timeout_s) as response:
             status = int(getattr(response, "status", 0) or response.getcode() or 0)
-            response.read(2048)
+            body = response.read(4096)
     except urllib.error.HTTPError as exc:
         status = int(exc.code)
         try:
@@ -161,4 +178,5 @@ def test_connection(spec, api_key, base_url=None, timeout=10.0) -> TestResult:
     message = "Connection ok" if ok else f"HTTP {status}"
     if ok and note:
         message = message + ". " + note
-    return TestResult(ok, str(status), _redact(message, key), elapsed)
+    quota = _openrouter_quota(body) if ok and getattr(spec, "id", "") == "openrouter" else None
+    return TestResult(ok, str(status), _redact(message, key), elapsed, quota)
