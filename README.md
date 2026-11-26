@@ -45,7 +45,7 @@ two limits are noted on the probe result.
 
 ## Build
 
-`build.ps1` makes a one-folder windowed app in `dist/PlumbCenter/`, zips it, and prints the
+`packaging/build.ps1` makes a one-folder windowed app in `dist/PlumbCenter/`, zips it, and prints the
 SHA256. The desktop package needs `plumbcenter/gui` on the branch.
 
 ## Tests
