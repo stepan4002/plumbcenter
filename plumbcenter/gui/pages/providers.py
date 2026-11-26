@@ -180,6 +180,7 @@ class ProvidersPage(QWidget):
             tag_lbl.setProperty("role", "muted")
 
             combo = QComboBox(matrix_panel)
+            combo.setAccessibleName(f"Default AI provider for {app_spec.name}")
             combo.addItem("None (use app default)", None)
             for p_spec in self._catalog:
                 combo.addItem(p_spec.name, p_spec.id)

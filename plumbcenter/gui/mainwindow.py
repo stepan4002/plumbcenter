@@ -131,6 +131,7 @@ class MainWindow(QMainWindow):
         self.theme_toggle_btn.setProperty("variant", "ghost")
         self.theme_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.theme_toggle_btn.setToolTip("Toggle dark / light theme (Ctrl+T)")
+        self.theme_toggle_btn.setAccessibleName("Toggle theme")
         self.theme_toggle_btn.clicked.connect(self.toggle_theme)
         sb_layout.addWidget(self.theme_toggle_btn)
 

@@ -92,6 +92,7 @@ class ProviderCard(QFrame):
             grid.addWidget(key_lbl, row, 0)
 
             self.key_input = QLineEdit(self)
+            self.key_input.setAccessibleName(f"{spec.name} API key")
             self.key_input.setEchoMode(QLineEdit.EchoMode.Password)
             self.key_input.setPlaceholderText(f"Enter {spec.name} API key ({spec.key_env})")
             self.key_input.setToolTip("Stored in OS keyring; never written to JSON or echoed back")
@@ -105,6 +106,7 @@ class ProviderCard(QFrame):
         grid.addWidget(url_lbl, row, 0)
 
         self.url_input = QLineEdit(self)
+        self.url_input.setAccessibleName(f"{spec.name} base URL")
         self.url_input.setText(spec.base_url or "")
         self.url_input.setReadOnly(not self._is_ollama)
         self.url_input.setEnabled(self._is_ollama)
@@ -120,6 +122,7 @@ class ProviderCard(QFrame):
         grid.addWidget(model_lbl, row, 0)
 
         self.model_input = QLineEdit(self)
+        self.model_input.setAccessibleName(f"{spec.name} default model")
         self.model_input.setText(spec.default_model or "")
         self.model_input.setPlaceholderText("Model identifier")
         grid.addWidget(self.model_input, row, 1)
