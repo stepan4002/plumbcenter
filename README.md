@@ -82,6 +82,6 @@ sentinel `sk-test-SENTINEL`.
 - `update` refuses a dirty checkout and only fast-forwards.
 - `setup_venv` creates `<app>/.venv` and, when `requirements.txt` exists, runs `pip install -r` on that file. It does not run other scripts.
 - The hub opens no network listener. Long-running apps you start (for example PlumbCheck Studio) are separate processes that choose their own port.
-- Logs can hold private launch links. The hub never shows them in lists, and you should keep logs private.
+- Logs can hold private launch links (PlumbCheck Studio prints a session token). The log viewer shows raw output, so do not share screenshots or copies of logs.
 
 Built by [Plumbnote](https://plumbnote.com).
