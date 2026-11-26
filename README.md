@@ -1,69 +1,67 @@
 # PlumbCenter
 
-**Central hub for all Plumbnote open-source apps.** Discover, install, update, run and stop
-PlumbCheck, PlumbCode, PlumbDoctor, PlumbGate, PlumbScout, PlumbStudio and PlumbBridge from one
-CLI or one local web page.
+Desktop hub for the Plumbnote open-source apps. Discover, install, update, set up, and run
+PlumbCheck, PlumbCode, PlumbDoctor, PlumbGate, PlumbScout, PlumbStudio, and PlumbBridge from
+one window.
 
-Pure Python 3.8+ standard library. No dependencies, nothing to `pip install`.
+Version 1.0.0. Python 3.9+. The hub UI is PySide6. Provider API keys go in the OS keyring
+(`keyring`, with a per-user DPAPI file fallback on Windows). Keys are never written to
+`providers.json`, logs, or the screen.
 
-## Quick start
+## Install
 
 ```sh
-git clone https://github.com/stepan4002/plumbcenter && cd plumbcenter
-python -m plumbcenter list          # catalog + install status
-python -m plumbcenter serve         # web hub at http://127.0.0.1:8765/
+pip install -e ".[dev]"
+plumbcenter gui
 ```
 
-Apps live as sibling folders of this repo (`../plumbdoctor`, `../plumbcheck`, ...). Use
-`--root DIR` or the `PLUMBCENTER_HOME` environment variable to point at a different folder.
-State (running processes, logs) is kept in `.plumbcenter/` (override with `PLUMBCENTER_STATE`).
+`plumbcenter-gui` is the windowed entry point. Apps are sibling folders of this repo
+(`../plumbcheck`, `../plumbdoctor`, ...). Point at another folder with `--root DIR` or
+`PLUMBCENTER_HOME`. Provider settings live in `~/.plumbnote/providers.json` (`PLUMBNOTE_HOME`).
 
-## What it does
+## Commands
 
-| Capability | CLI | Web UI |
-|---|---|---|
-| Discover & catalog: description, stage, installed?, version, branch, uncommitted changes, GitHub stars/release | `list [--json] [--remote]`, `info <app>` | cards, "Check GitHub" |
-| Download / update from GitHub | `install <app>`, `update <app>` / `update --all` | Install / Update buttons |
-| Run & control | `run <app> [demo]`, `start <app> [action]`, `stop <app> [action]`, `ps`, `logs <app>`, `open <app>` | Run demo / Start / Stop / Open / Logs |
+| Command | What it does |
+|---|---|
+| `plumbcenter gui` | Open the desktop hub |
+| `plumbcenter list [--json] [--remote]` | Catalog and install status |
+| `plumbcenter info <app>` | One app |
+| `plumbcenter install <app>` / `update <app>` / `update --all` | Clone or fast-forward |
+| `plumbcenter run <app> [demo]` | Run a short action |
+| `plumbcenter start` / `stop` / `ps` / `logs` / `open` | Long-running actions |
+| `plumbcenter providers list [--json]` | Providers. Keys are never printed |
+| `plumbcenter providers set-default <app> <provider\|none>` | Per-app default provider |
+| `plumbcenter serve` | Legacy local web hub. It stays until the desktop build replaces it |
 
-Exit codes: `0` ok, `1` command failed, `2` usage error or unknown app. Errors are one line on stderr.
+Exit codes: `0` ok, `1` the command failed, `2` usage error or unknown app.
 
-| App | Stage | Hub actions |
-|---|---|---|
-| PlumbCheck | released | `demo` (exits 1 by design, treated as success), `studio` (local web app) |
-| PlumbDoctor, PlumbGate, PlumbScout, PlumbStudio, PlumbBridge | preview | `demo` (`python demo/run.py`) |
-| PlumbCode | design | catalog only, nothing to run yet |
+## Providers
 
-## Safety
+OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, Z.ai, Ollama, and Kilo. Ollama is local
+(`http://127.0.0.1:11434`) and does not need a key. Cloud base URLs must be HTTPS. Connection
+tests are cheap GETs to each provider's documented endpoint. Z.ai's docs publish chat
+completions, not a models list. Kilo's documented `GET /models` does not require a key. Those
+two limits are noted on the probe result.
 
-- Only the registry in `plumbcenter/registry.py` is ever cloned or executed: never a user-supplied URL or command, never through a shell.
-- `update` refuses a checkout with uncommitted changes and never merges (fast-forward only).
-- The web hub binds to `127.0.0.1` only, rejects foreign `Host`/`Origin` headers, requires an `X-PlumbCenter` header on every POST, and serves a strict CSP.
-- Logs can contain private launch links (PlumbCheck Studio prints a session token). `open` uses it; `ps` and the UI list never show it. Keep logs private.
-- Process records remember the executable name, so a recycled PID is never killed by mistake.
+## Build
 
-## Adding an app
-
-Add one `AppSpec` to `REGISTRY` in `plumbcenter/registry.py` (repo name, local folder names, actions).
-Everything else, including the UI, picks it up.
-
-## Layout
-
-```
-plumbcenter/registry.py    app catalog (data only)
-plumbcenter/discovery.py   local scan, version/git state, GitHub metadata
-plumbcenter/installer.py   clone / fast-forward update
-plumbcenter/runner.py      run, start/stop, process table, logs
-plumbcenter/cli.py         command line        plumbcenter/web.py + static/  web hub
-docs/SPEC.md               module contracts
-```
+`build.ps1` makes a one-folder windowed app in `dist/PlumbCenter/`, zips it, and prints the
+SHA256. The desktop package needs `plumbcenter/gui` on the branch.
 
 ## Tests
 
 ```sh
-python -m unittest discover -s tests
+python -m pytest
 ```
 
-No network needed: git tests use a local bare repository as the remote.
+Set `QT_QPA_PLATFORM=offscreen` for GUI tests. No network and no real API keys. Tests use the
+sentinel `sk-test-SENTINEL`.
+
+## Safety
+
+- Only registry URLs are cloned, and nothing runs through a shell.
+- `update` refuses a dirty checkout and only fast-forwards.
+- `setup_venv` creates `<app>/.venv` and, when `requirements.txt` exists, runs `pip install -r` on that file. It does not run other scripts.
+- The legacy web hub binds to `127.0.0.1` only.
 
 Built by [Plumbnote](https://plumbnote.com).

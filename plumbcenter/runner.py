@@ -18,7 +18,7 @@ from .registry import AppSpec, get_app
 from .discovery import hub_root, find_checkout
 
 __all__ = ["RunnerError", "state_dir", "run_action", "start", "stop",
-           "status", "open_app", "tail_log", "get_app"]
+           "status", "open_app", "tail_log", "get_app", "setup_venv", "health"]
 
 
 class RunnerError(Exception):
@@ -341,6 +341,132 @@ def open_app(app_id, root=None):
         except Exception:
             pass
     return {"opened": None}
+
+
+def _output_tail(text: str, limit: int = 65536) -> str:
+    if len(text) > limit:
+        return text[-limit:]
+    return text
+
+
+def setup_venv(app_id, root=None) -> dict:
+    """Create ``<checkout>/.venv`` and ``pip install -r requirements.txt`` when that file exists.
+
+    Only those two commands run. No shell, no setup scripts, no other user files.
+    Raises ``RunnerError`` when the app is unknown, not installed, or a command fails.
+    """
+    app = get_app(app_id.strip().lower() if isinstance(app_id, str) else app_id)
+    if app is None:
+        raise RunnerError(f"unknown app: {app_id}")
+    checkout = _check_installed(app, root)
+    venv_dir = checkout / ".venv"
+    created = subprocess.run(
+        [sys.executable, "-m", "venv", str(venv_dir)],
+        cwd=str(checkout),
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=180,
+        shell=False,
+        env=_child_env(),
+    )
+    if created.returncode != 0:
+        detail = _output_tail((created.stdout or "") + (created.stderr or "")).strip()
+        raise RunnerError(detail or "venv creation failed")
+
+    req = checkout / "requirements.txt"
+    output = ""
+    installed = False
+    if req.is_file():
+        pip_name = "pip.exe" if os.name == "nt" else "pip"
+        pip_dir = "Scripts" if os.name == "nt" else "bin"
+        pip = venv_dir / pip_dir / pip_name
+        if not pip.is_file():
+            raise RunnerError("venv created but pip is missing")
+        installed_proc = subprocess.run(
+            [str(pip), "install", "-r", str(req)],
+            cwd=str(checkout),
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=600,
+            shell=False,
+            env=_child_env(),
+        )
+        output = _output_tail((installed_proc.stdout or "") + (installed_proc.stderr or ""))
+        if installed_proc.returncode != 0:
+            raise RunnerError(output.strip() or "pip install failed")
+        installed = True
+        message = "Virtual environment ready; requirements installed"
+    else:
+        message = "Virtual environment ready"
+    return {
+        "ok": True,
+        "app": app.id,
+        "path": str(venv_dir),
+        "installed_requirements": installed,
+        "message": message,
+        "output": output,
+    }
+
+
+def health(app_id, root=None) -> dict:
+    """``{"state": "ok|warn|error|missing", "reasons": [...]}``.
+
+    Checks install, a clean git worktree, required executables on PATH, and a ``.venv``.
+    """
+    app = get_app(app_id.strip().lower() if isinstance(app_id, str) else app_id)
+    if app is None:
+        return {"state": "error", "reasons": [f"unknown app: {app_id}"]}
+    workspace = Path(root) if root is not None else hub_root()
+    checkout = find_checkout(app, workspace)
+    if checkout is None:
+        return {"state": "missing", "reasons": ["not installed"]}
+
+    warnings = []
+    errors = []
+    status_text = _run_git_status(checkout)
+    if status_text is None:
+        warnings.append("git status unavailable")
+    elif status_text.strip():
+        warnings.append("uncommitted changes")
+
+    seen = []
+    for action in app.actions:
+        for req in action.requires:
+            if req not in seen:
+                seen.append(req)
+    for req in seen:
+        if shutil.which(req) is None and not (req == "python" and sys.executable):
+            errors.append(f"missing executable: {req}")
+
+    if not (checkout / ".venv").is_dir():
+        warnings.append("venv not created")
+
+    if errors:
+        return {"state": "error", "reasons": errors + warnings}
+    if warnings:
+        return {"state": "warn", "reasons": warnings}
+    return {"state": "ok", "reasons": []}
+
+
+def _run_git_status(path: Path) -> Optional[str]:
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(path), "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            env=env,
+            shell=False,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout
 
 
 def tail_log(app_id, action_name, lines=50):

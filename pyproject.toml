@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "plumbcenter"
+version = "1.0.0"
+description = "Native desktop hub for the Plumbnote open-source apps."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [{name = "Plumbnote"}]
+keywords = ["plumbnote", "desktop", "pyside6"]
+dependencies = [
+    "PySide6-Essentials>=6.6",
+    "keyring>=24",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pyinstaller",
+]
+
+[project.scripts]
+plumbcenter = "plumbcenter.cli:main"
+
+[project.gui-scripts]
+plumbcenter-gui = "plumbcenter.gui.app:main"
+
+[tool.setuptools.packages.find]
+include = ["plumbcenter*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
