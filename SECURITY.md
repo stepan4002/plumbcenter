@@ -21,6 +21,8 @@ Please give us a reasonable time to fix the issue before you disclose it.
   asset download (HTTPS to GitHub hosts only; redirects off GitHub are refused).
 - **Downloads are never run.** The updater saves a release asset to the hub's downloads folder and verifies
   its SHA-256 when GitHub or a `.sha256` file publishes one. You run it yourself.
+- **Diagnostics bundles** redact API keys (by value and by pattern), `#auth=` launch tokens and your home
+  path. Redaction is best effort: read a bundle before you share it.
 - **No listener.** The hub opens no network port. Apps you start from it own their own ports.
 - **Logs** of apps you start can contain private launch links. Treat the log viewer as sensitive.
 

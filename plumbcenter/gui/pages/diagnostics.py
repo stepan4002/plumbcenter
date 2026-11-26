@@ -13,6 +13,7 @@ import PySide6
 from PySide6.QtCore import Qt, qVersion
 from PySide6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -25,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ... import __version__, discovery, runner
+from ... import __version__, diagnostics_bundle, discovery, runner
 from ..tasks import run_in_background
 from ..widgets.badge import Badge
 from ..widgets.toast import ToastManager
@@ -65,8 +66,10 @@ class DiagnosticsPage(QWidget):
         workspace_root: Path,
         toast: ToastManager,
         parent: Optional[QWidget] = None,
+        provider_store=None,
     ) -> None:
         super().__init__(parent)
+        self._store = provider_store
         self._workspace_root = Path(workspace_root)
         self._toast = toast
         self._last_report: Dict[str, Any] = {}
@@ -94,6 +97,13 @@ class DiagnosticsPage(QWidget):
         self.copy_btn.setToolTip("Copy full diagnostic report to clipboard")
         self.copy_btn.clicked.connect(self.copy_report)
         header.addWidget(self.copy_btn)
+
+        self.export_btn = QPushButton("Export bundle", self)
+        self.export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.export_btn.setToolTip("Save a secret-redacted diagnostics bundle (.zip or .json) to share for support")
+        self.export_btn.setAccessibleName("Export diagnostics bundle")
+        self.export_btn.clicked.connect(lambda: self.export_bundle())
+        header.addWidget(self.export_btn)
 
         self.refresh_btn = QPushButton("Run checks", self)
         self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -278,3 +288,24 @@ class DiagnosticsPage(QWidget):
         text = self.format_report_text()
         QApplication.clipboard().setText(text)
         self._toast.success("Diagnostics report copied to clipboard.")
+
+    def export_bundle(self, dest: Optional[str] = None) -> None:
+        """Write the redacted bundle. With no `dest`, ask where to save (.zip by default)."""
+        if dest is None:
+            dest, _ = QFileDialog.getSaveFileName(
+                self, "Export diagnostics bundle", "plumbcenter-diagnostics.zip",
+                "Zip archive (*.zip);;JSON (*.json)")
+            if not dest:
+                return
+        self.export_btn.setEnabled(False)
+
+        def _on_ok(res: Dict[str, Any]) -> None:
+            self._toast.success(f"Diagnostics bundle saved ({res['format']}, {res['bytes']} bytes). Secrets are redacted.")
+            self.last_export = res
+
+        run_in_background(
+            diagnostics_bundle.export_bundle, dest, root=self._workspace_root, store=self._store,
+            on_success=_on_ok,
+            on_error=lambda msg: self._toast.error(f"Export failed: {msg}"),
+            on_done=lambda: self.export_btn.setEnabled(True),
+        )

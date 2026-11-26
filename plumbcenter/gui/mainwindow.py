@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QSettings, Qt, Signal
+from PySide6.QtCore import QByteArray, QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -19,8 +19,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import __version__
+from .. import __version__, shared_settings
 from ..discovery import hub_root
+from ..registry import REGISTRY
 from .icons import make_brand_icon, make_brand_pixmap, make_nav_icon
 from .pages.apps import AppsPage
 from .pages.diagnostics import DiagnosticsPage
@@ -28,7 +29,9 @@ from .pages.processes import ProcessesPage
 from .pages.providers import ProvidersPage
 from .pages.settings import SettingsPage
 from .pages.updates import UpdatesPage
+from .tray import TrayController
 from .theme import build_stylesheet, get_tokens
+from .widgets.palette import Command, CommandPalette
 from .widgets.toast import ToastManager
 
 
@@ -45,6 +48,8 @@ NAV_ITEMS: List[Tuple[str, str, str]] = [
 class MainWindow(QMainWindow):
     """Creative-Cloud-style desktop hub main window."""
 
+    THEME_POLL_MS = 1000
+
     theme_changed = Signal(str)
     workspace_changed = Signal(str)
 
@@ -59,6 +64,10 @@ class MainWindow(QMainWindow):
         self._theme: str = str(self.settings.value("ui/theme", "dark") or "dark").lower()
         if self._theme not in ("dark", "light"):
             self._theme = "dark"
+        shared_theme = shared_settings.load_theme()      # the shared file wins so sibling apps stay in sync
+        if shared_theme:
+            self._theme = shared_theme
+        self._tray: Optional[TrayController] = None
 
         saved_root = self.settings.value("workspace/root", "")
         self._workspace_root: Path = Path(str(saved_root)).resolve() if saved_root else hub_root()
@@ -187,6 +196,7 @@ class MainWindow(QMainWindow):
         self.diagnostics_page = DiagnosticsPage(
             workspace_root=self._workspace_root,
             toast=self.toast,
+            provider_store=provider_store,
             parent=self.stack,
         )
 
@@ -215,7 +225,7 @@ class MainWindow(QMainWindow):
         self.status_workspace_label.setMinimumWidth(0)
         st_layout.addWidget(self.status_workspace_label, 1)
 
-        self.status_hint_label = QLabel("Ctrl+1..6 navigate · Ctrl+T theme", self.status_bar_frame)
+        self.status_hint_label = QLabel("Ctrl+K palette · Ctrl+1..6 navigate · Ctrl+T theme", self.status_bar_frame)
         self.status_hint_label.setProperty("role", "muted")
         st_layout.addWidget(self.status_hint_label)
         outer.addWidget(self.status_bar_frame)
@@ -224,6 +234,17 @@ class MainWindow(QMainWindow):
         self._active_page = "apps"
         self.apply_theme(self._theme)
         self.navigate("apps")
+
+        palette_shortcut = QShortcut(QKeySequence("Ctrl+K"), self)
+        palette_shortcut.activated.connect(self.open_palette)
+        self._restore_geometry()
+
+        # Live theme sync: adopt a theme another Plumbnote app writes to the shared settings file.
+        self._shared_mtime = shared_settings.mtime()
+        self._theme_timer = QTimer(self)
+        self._theme_timer.setInterval(self.THEME_POLL_MS)
+        self._theme_timer.timeout.connect(self.poll_shared_theme)
+        self._theme_timer.start()
 
     @property
     def current_theme(self) -> str:
@@ -250,13 +271,17 @@ class MainWindow(QMainWindow):
         if hasattr(page, "on_activated"):
             page.on_activated()
 
-    def set_theme(self, theme_name: str) -> None:
+    def set_theme(self, theme_name: str, write_shared: bool = True) -> None:
         normalized = "light" if str(theme_name).lower() == "light" else "dark"
         if normalized == self._theme:
             return
         self._theme = normalized
         self.settings.setValue("ui/theme", normalized)
         self.settings.sync()
+        if write_shared:
+            if not shared_settings.save_theme(normalized):
+                self.toast.warning("Could not write settings.json; other apps will not follow the theme.")
+            self._shared_mtime = shared_settings.mtime()
         self.apply_theme(normalized)
         self.settings_page.sync_theme(normalized)
         self.theme_changed.emit(normalized)
@@ -296,3 +321,95 @@ class MainWindow(QMainWindow):
         self.updates_page.set_workspace_root(path)
         self.settings_page.sync_workspace_root(path)
         self.workspace_changed.emit(str(path))
+
+    # -- shared theme -------------------------------------------------
+    def poll_shared_theme(self) -> None:
+        """Adopt a theme written by another app (cheap: one stat per tick, read only on change)."""
+        m = shared_settings.mtime()
+        if m == self._shared_mtime:
+            return
+        self._shared_mtime = m
+        theme = shared_settings.load_theme()
+        if theme and theme != self._theme:
+            self.set_theme(theme, write_shared=False)
+
+    # -- geometry -----------------------------------------------------
+    def _restore_geometry(self) -> None:
+        geo = self.settings.value("window/geometry")
+        if isinstance(geo, (QByteArray, bytes)) and geo:
+            self.restoreGeometry(geo)
+        state = self.settings.value("window/splitter/processes")
+        if isinstance(state, (QByteArray, bytes)) and state:
+            self.processes_page.splitter.restoreState(state)
+
+    def save_geometry(self) -> None:
+        self.settings.setValue("window/geometry", self.saveGeometry())
+        self.settings.setValue("window/splitter/processes", self.processes_page.splitter.saveState())
+        self.settings.sync()
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        self.save_geometry()
+        self._theme_timer.stop()
+        if self._tray is not None:
+            self._tray.detach()
+        super().closeEvent(event)
+
+    # -- tray / visibility --------------------------------------------
+    def enable_tray(self) -> bool:
+        if self._tray is None:
+            self._tray = TrayController(self)
+        return self._tray.attach()
+
+    def show_and_raise(self) -> None:
+        self.show()
+        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
+        self.raise_()
+        self.activateWindow()
+
+    def toggle_visibility(self) -> None:
+        if self.isVisible() and not self.isMinimized():
+            self.hide()
+        else:
+            self.show_and_raise()
+
+    def quit_app(self) -> None:
+        self.close()
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+
+    # -- command palette ----------------------------------------------
+    def build_commands(self) -> List[Command]:
+        cmds: List[Command] = []
+        for key, label, _tip in NAV_ITEMS:
+            cmds.append(Command(f"Go to {label}", lambda k=key: self.navigate(k), "Navigate"))
+        cmds.append(Command("Toggle dark / light theme", self.toggle_theme, "Theme", "switch mode"))
+        cmds.append(Command("Use dark theme", lambda: self.set_theme("dark"), "Theme"))
+        cmds.append(Command("Use light theme", lambda: self.set_theme("light"), "Theme"))
+        cmds.append(Command("Refresh apps", self.apps_page.refresh, "Apps", "rescan"))
+        cmds.append(Command("Check for updates",
+                            lambda: (self.navigate("updates"), self.updates_page.check()), "Updates"))
+        cmds.append(Command("Check provider health",
+                            lambda: (self.navigate("providers"), self.providers_page.check_health()), "Providers"))
+        cmds.append(Command("Export diagnostics bundle...",
+                            lambda: (self.navigate("diagnostics"), self.diagnostics_page.export_bundle()),
+                            "Diagnostics", "redacted zip json support"))
+        statuses = getattr(self.apps_page, "_statuses", {}) or {}
+        for spec in REGISTRY:
+            st = statuses.get(spec.id)
+            if not (st and st.installed):
+                continue
+            cmds.append(Command(f"Open {spec.name} folder", lambda a=spec.id: self.apps_page._on_open_folder(a), "App"))
+            for act in spec.actions:
+                if act.kind == "serve":
+                    cmds.append(Command(f"Start {spec.name}: {act.label}",
+                                        lambda a=spec.id, n=act.name: self.apps_page._on_start_action(a, n), "App"))
+        cmds.append(Command("Quit PlumbCenter", self.quit_app, "App"))
+        return cmds
+
+    def open_palette(self) -> CommandPalette:
+        dlg = CommandPalette(self.build_commands(), self)
+        dlg.show()
+        dlg.input.setFocus()
+        self._palette = dlg
+        return dlg

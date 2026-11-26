@@ -52,6 +52,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     settings = QSettings("Plumbnote", "PlumbCenter")
     window = MainWindow(settings=settings)
     window.show()
+    if not smoke:
+        window.enable_tray()   # no-op where the OS has no system tray
     if smoke:  # launch check used by packaging/smoke_exe.ps1: show, then exit 0
         QTimer.singleShot(1500, app.quit)
     return app.exec()

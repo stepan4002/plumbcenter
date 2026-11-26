@@ -65,6 +65,12 @@ See [docs/PROVIDERS-CONTRACT.md](docs/PROVIDERS-CONTRACT.md) for the file format
 - **Providers > Provider health** pings each enabled provider and shows latency; quota appears only where the
   provider exposes it (OpenRouter today).
 
+- **Ctrl+K** opens the command palette. Window size and the Processes splitter are remembered.
+- **Theme** (Ctrl+T or Settings) is written to `~/.plumbnote/settings.json`; the hub follows changes other apps
+  make to that file. Whether a sibling app reads it is up to that app (see `docs/SETTINGS-CONTRACT.md`).
+- **Diagnostics > Export bundle** makes a redacted `.zip`/`.json` you can attach to a bug report. Review it first.
+- A **system tray** icon offers quick launch for installed apps when the OS has a tray.
+
 Releases: push a `vX.Y.Z` tag and the `Release` workflow builds the Windows exe and publishes it. See
 [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
