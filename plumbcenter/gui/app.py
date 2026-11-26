@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Optional, Sequence
 
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QSettings, Qt, QTimer
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication
 
@@ -46,10 +46,14 @@ def create_application(argv: Optional[Sequence[str]] = None) -> QApplication:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """Launch the PlumbCenter desktop hub."""
-    app = create_application(argv)
+    args = list(argv) if argv is not None else list(sys.argv)
+    smoke = "--smoke-test" in args
+    app = create_application([a for a in args if a != "--smoke-test"])
     settings = QSettings("Plumbnote", "PlumbCenter")
     window = MainWindow(settings=settings)
     window.show()
+    if smoke:  # launch check used by packaging/smoke_exe.ps1: show, then exit 0
+        QTimer.singleShot(1500, app.quit)
     return app.exec()
 
 
