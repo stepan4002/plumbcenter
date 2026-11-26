@@ -150,6 +150,47 @@ class TestCLI(unittest.TestCase):
         exit_code, _, _ = self._run_cli(['--root', str(self.root), 'install', 'plumbdoctor'])
         self.assertEqual(exit_code, 1)  # already installed error
 
+    def test_providers_list_json_has_catalog_and_no_secrets(self):
+        os.environ['PLUMBNOTE_HOME'] = str(self.temp_dir)
+        try:
+            exit_code, stdout, _ = self._run_cli(['providers', 'list', '--json'])
+        finally:
+            os.environ.pop('PLUMBNOTE_HOME', None)
+        self.assertEqual(exit_code, 0)
+        data = json.loads(stdout)
+        ids = [row['id'] for row in data]
+        self.assertEqual(ids, [
+            'openai', 'anthropic', 'gemini', 'openrouter', 'groq', 'zai', 'ollama', 'kilo',
+        ])
+        self.assertNotIn('sk-', stdout.lower())
+        self.assertNotIn('api_key', stdout.lower())
+        ollama = next(row for row in data if row['id'] == 'ollama')
+        self.assertFalse(ollama['needs_key'])
+        self.assertFalse(ollama['has_key'])
+
+    def test_providers_set_default_round_trip(self):
+        os.environ['PLUMBNOTE_HOME'] = str(self.temp_dir)
+        try:
+            exit_code, stdout, _ = self._run_cli(['providers', 'set-default', 'plumbcheck', 'ollama'])
+            self.assertEqual(exit_code, 0)
+            self.assertIn('plumbcheck -> ollama', stdout)
+            written = (Path(self.temp_dir) / 'providers.json').read_text(encoding='utf-8')
+            self.assertNotIn('sk-', written)
+            exit_code, _, stderr = self._run_cli(['providers', 'set-default', 'nope', 'ollama'])
+            self.assertEqual(exit_code, 2)
+            self.assertIn('unknown app', stderr)
+            exit_code, _, stderr = self._run_cli(['providers', 'set-default', 'plumbcheck', 'not-a-provider'])
+            self.assertEqual(exit_code, 2)
+            self.assertIn('unknown provider', stderr)
+            exit_code, stdout, _ = self._run_cli(['providers', 'set-default', 'plumbcheck', 'none'])
+            self.assertEqual(exit_code, 0)
+            self.assertIn('default cleared', stdout)
+            saved = json.loads((Path(self.temp_dir) / 'providers.json').read_text(encoding='utf-8'))
+            self.assertNotIn('plumbcheck', saved['defaults'])
+        finally:
+            os.environ.pop('PLUMBNOTE_HOME', None)
+
+
 # Entry point for unittest discovery
 if __name__ == '__main__':
     unittest.main()

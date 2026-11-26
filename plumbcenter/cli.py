@@ -259,6 +259,75 @@ def _cmd_open(args) -> int:
     return 0
 
 
+def _cmd_gui(args) -> int:
+    """Launch the native desktop hub. The web `serve` command stays until the GUI is accepted."""
+    try:
+        from .gui.app import main as gui_main
+    except Exception as exc:
+        return _fail(f"GUI is not available: {exc}")
+    try:
+        code = gui_main()
+    except Exception as exc:
+        return _fail(str(exc))
+    return int(code or 0)
+
+
+def _provider_row(cfg) -> dict:
+    """Public provider fields. Never includes an API key."""
+    return {
+        "id": cfg.id,
+        "name": cfg.name,
+        "kind": cfg.kind,
+        "enabled": bool(cfg.enabled),
+        "has_key": bool(cfg.has_key),
+        "base_url": cfg.base_url,
+        "default_model": cfg.default_model,
+        "needs_key": bool(cfg.needs_key),
+    }
+
+
+def _cmd_providers_list(args) -> int:
+    from .providers.store import ProviderError, ProviderStore
+
+    try:
+        rows = [_provider_row(cfg) for cfg in ProviderStore().list()]
+    except ProviderError as exc:
+        return _fail(str(exc))
+    if args.json:
+        print(json.dumps(rows, indent=2))
+        return 0
+    headers = ["id", "name", "enabled", "key", "model", "base_url"]
+    table_rows = []
+    for row in rows:
+        table_rows.append([
+            row["id"],
+            row["name"],
+            "yes" if row["enabled"] else "no",
+            "saved" if row["has_key"] else ("n/a" if not row["needs_key"] else "no"),
+            row["default_model"],
+            row["base_url"],
+        ])
+    print(_table(headers, table_rows))
+    return 0
+
+
+def _cmd_providers_set_default(args) -> int:
+    from .providers.store import ProviderError, ProviderStore
+
+    raw = (args.provider or "").strip().lower()
+    provider_id = None if raw in ("", "none", "-") else raw
+    try:
+        ProviderStore().set_default(args.app, provider_id)
+    except ProviderError as exc:
+        code = 2 if str(exc).startswith("unknown ") else 1
+        return _fail(str(exc), code=code)
+    if provider_id is None:
+        print(f"default cleared: {args.app.strip().lower()}")
+    else:
+        print(f"default: {args.app.strip().lower()} -> {provider_id}")
+    return 0
+
+
 def _cmd_serve(args) -> int:
     web_mod = _load_web()
     try:
@@ -324,6 +393,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     p = sub.add_parser("serve", help="start the web hub")
     p.add_argument("--port", type=int, default=8765, help="port (default: 8765)")
     p.set_defaults(func=_cmd_serve)
+
+    p = sub.add_parser("gui", help="open the desktop hub")
+    p.set_defaults(func=_cmd_gui)
+
+    providers = sub.add_parser("providers", help="list providers or set a per-app default")
+    providers_sub = providers.add_subparsers(dest="providers_command", required=True)
+    p = providers_sub.add_parser("list", help="list providers (keys are never printed)")
+    p.add_argument("--json", action="store_true", help="JSON output")
+    p.set_defaults(func=_cmd_providers_list)
+    p = providers_sub.add_parser("set-default", help="set or clear the default provider for an app")
+    p.add_argument("app", help="app id")
+    p.add_argument("provider", help="provider id, or 'none' to clear")
+    p.set_defaults(func=_cmd_providers_set_default)
 
     args = parser.parse_args(argv)
     for stream in (sys.stdout, sys.stderr):
