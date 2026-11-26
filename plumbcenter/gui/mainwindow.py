@@ -24,17 +24,21 @@ from ..discovery import hub_root
 from .icons import make_brand_icon, make_brand_pixmap, make_nav_icon
 from .pages.apps import AppsPage
 from .pages.diagnostics import DiagnosticsPage
+from .pages.processes import ProcessesPage
 from .pages.providers import ProvidersPage
 from .pages.settings import SettingsPage
+from .pages.updates import UpdatesPage
 from .theme import build_stylesheet, get_tokens
 from .widgets.toast import ToastManager
 
 
 NAV_ITEMS: List[Tuple[str, str, str]] = [
     ("apps", "Apps", "Manage, install, and launch Plumbnote apps (Ctrl+1)"),
-    ("providers", "Providers", "Configure AI providers and per-app defaults (Ctrl+2)"),
-    ("settings", "Settings", "Workspace root, theme, and hub updates (Ctrl+3)"),
-    ("diagnostics", "Diagnostics", "Environment checks and app health report (Ctrl+4)"),
+    ("processes", "Processes", "Stop, restart, and tail running apps (Ctrl+2)"),
+    ("providers", "Providers", "Configure AI providers and per-app defaults (Ctrl+3)"),
+    ("updates", "Updates", "Check GitHub Releases and update apps (Ctrl+4)"),
+    ("settings", "Settings", "Workspace root, theme, and hub updates (Ctrl+5)"),
+    ("diagnostics", "Diagnostics", "Environment checks and app health report (Ctrl+6)"),
 ]
 
 
@@ -170,6 +174,16 @@ class MainWindow(QMainWindow):
             on_theme_changed=self.set_theme,
             parent=self.stack,
         )
+        self.processes_page = ProcessesPage(
+            workspace_root=self._workspace_root,
+            toast=self.toast,
+            parent=self.stack,
+        )
+        self.updates_page = UpdatesPage(
+            workspace_root=self._workspace_root,
+            toast=self.toast,
+            parent=self.stack,
+        )
         self.diagnostics_page = DiagnosticsPage(
             workspace_root=self._workspace_root,
             toast=self.toast,
@@ -178,7 +192,9 @@ class MainWindow(QMainWindow):
 
         self._pages: Dict[str, QWidget] = {
             "apps": self.apps_page,
+            "processes": self.processes_page,
             "providers": self.providers_page,
+            "updates": self.updates_page,
             "settings": self.settings_page,
             "diagnostics": self.diagnostics_page,
         }
@@ -199,7 +215,7 @@ class MainWindow(QMainWindow):
         self.status_workspace_label.setMinimumWidth(0)
         st_layout.addWidget(self.status_workspace_label, 1)
 
-        self.status_hint_label = QLabel("Ctrl+1..4 navigate · Ctrl+T theme", self.status_bar_frame)
+        self.status_hint_label = QLabel("Ctrl+1..6 navigate · Ctrl+T theme", self.status_bar_frame)
         self.status_hint_label.setProperty("role", "muted")
         st_layout.addWidget(self.status_hint_label)
         outer.addWidget(self.status_bar_frame)
@@ -276,5 +292,7 @@ class MainWindow(QMainWindow):
         self.status_workspace_label.setText(f"Workspace: {path}")
         self.apps_page.set_workspace_root(path)
         self.diagnostics_page.set_workspace_root(path)
+        self.processes_page.set_workspace_root(path)
+        self.updates_page.set_workspace_root(path)
         self.settings_page.sync_workspace_root(path)
         self.workspace_changed.emit(str(path))

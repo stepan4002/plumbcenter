@@ -148,6 +148,21 @@ def make_nav_icon(kind: str, color: str, size: int = 18) -> QIcon:
         path.lineTo(s * 0.70, s * 0.46)
         path.lineTo(s * 0.88, s * 0.46)
         p.drawPath(path)
+    elif kind == "processes":
+        # Play triangle inside a ring
+        p.drawEllipse(QPointF(s * 0.5, s * 0.5), s * 0.36, s * 0.36)
+        tri = QPainterPath()
+        tri.moveTo(s * 0.43, s * 0.35)
+        tri.lineTo(s * 0.66, s * 0.5)
+        tri.lineTo(s * 0.43, s * 0.65)
+        tri.closeSubpath()
+        p.drawPath(tri)
+    elif kind == "updates":
+        # Down arrow into a tray
+        p.drawLine(QPointF(s * 0.5, s * 0.14), QPointF(s * 0.5, s * 0.62))
+        p.drawLine(QPointF(s * 0.32, s * 0.46), QPointF(s * 0.5, s * 0.64))
+        p.drawLine(QPointF(s * 0.68, s * 0.46), QPointF(s * 0.5, s * 0.64))
+        p.drawLine(QPointF(s * 0.18, s * 0.84), QPointF(s * 0.82, s * 0.84))
     elif kind == "theme_dark":
         # Crescent moon
         p.drawArc(QRectF(s * 0.2, s * 0.2, s * 0.6, s * 0.6), 40 * 16, 260 * 16)

@@ -107,6 +107,18 @@ class TestRunner(unittest.TestCase):
         self.assertFalse(runner._is_alive(pid))
         self.assertEqual(runner.status(), [])
 
+    def test_restart_replaces_process_and_restarts_when_stopped(self):
+        first = runner.start("fakeapp", "serve", root=self.root)
+        second = runner.restart("fakeapp", "serve", root=self.root)
+        self.assertNotEqual(first["pid"], second["pid"])
+        self.assertFalse(runner._is_alive(first["pid"]))
+        self.assertTrue(runner._is_alive(second["pid"]))
+        self.assertEqual([r["pid"] for r in runner.status()], [second["pid"]])
+        runner.stop("fakeapp", "serve")
+        # restart on something that is not running behaves like start
+        third = runner.restart("fakeapp", "serve", root=self.root)
+        self.assertTrue(runner._is_alive(third["pid"]))
+
     def test_tail_log(self):
         runner.start("fakeapp", "serve", root=self.root)
         time.sleep(0.5)
