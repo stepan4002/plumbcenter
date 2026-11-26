@@ -62,12 +62,13 @@ PROVIDERS: Tuple[ProviderSpec, ...] = (
         "https://console.groq.com/docs/openai",
         "openai",
     ),
-    # VERIFY: base URL and default model against https://docs.z.ai before relying on tests.
+    # Auth and base are from https://docs.z.ai/api-reference/introduction (Bearer, paas/v4).
+    # That document does not publish a models-list GET. default_model is a documented chat id.
     ProviderSpec(
         "zai", "Z.ai", "cloud",
         "https://api.z.ai/api/paas/v4", "ZAI_API_KEY", True,
-        "glm-4.5-air",
-        "https://docs.z.ai",
+        "glm-4.6",
+        "https://docs.z.ai/api-reference/introduction",
         "openai",
     ),
     ProviderSpec(
@@ -77,12 +78,12 @@ PROVIDERS: Tuple[ProviderSpec, ...] = (
         "https://github.com/ollama/ollama/blob/main/docs/api.md",
         "ollama",
     ),
-    # VERIFY: Kilo's OpenAI-compatible gateway host and auth header from official docs.
+    # Base is the documented gateway (https://kilo.ai/gateway). GET /models there does not require a key.
     ProviderSpec(
         "kilo", "Kilo", "cloud",
-        "https://api.kilo.ai/api/openrouter", "KILO_API_KEY", True,
-        "auto",
-        "https://kilo.ai/docs",
+        "https://api.kilo.ai/api/gateway", "KILO_API_KEY", True,
+        "kilo-auto/efficient",
+        "https://kilo.ai/gateway",
         "openai",
     ),
 )

@@ -1,16 +1,21 @@
 """Cheap authenticated connection tests. urllib only.
 
-Phase 0 ships the contract. Per-provider requests are filled in after each
-endpoint is checked against the provider's official docs. Nothing here may
-place the API key in ``message`` or raise it in an exception string.
+The API key is sent only to the host of the configured base URL. Redirects to
+any other host are refused. The key is removed from every result message.
 """
 
 from __future__ import annotations
 
+import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
-from typing import Optional
+from typing import Dict, Optional, Tuple
+from urllib.parse import urlsplit
 
 __all__ = ["TestResult", "test_connection"]
+
+_LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 
 
 @dataclass
@@ -22,40 +27,138 @@ class TestResult:
 
 
 def _redact(message: str, api_key: Optional[str]) -> str:
-    if api_key and api_key in message:
+    if api_key and message and api_key in message:
         return message.replace(api_key, "***")
     return message
 
 
-def test_connection(spec, api_key, base_url=None, timeout=10.0) -> TestResult:
-    """Probe ``spec`` at ``base_url`` (catalog default when omitted).
+def _host(url: str) -> str:
+    return (urlsplit(url).hostname or "").lower()
 
-    Returns a result and does not raise for HTTP failures. Network errors come
-    back as ``ok=False``. The key is sent only to the configured provider host
-    once the real probes land; this stub makes no request.
+
+def _check_url(url: str) -> Optional[str]:
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower()
+    if parts.username or parts.password:
+        return "base_url must not include credentials"
+    if not host:
+        return "base_url is missing a host"
+    if parts.scheme == "https":
+        return None
+    if parts.scheme == "http" and host in _LOOPBACK:
+        return None
+    if parts.scheme == "http":
+        return "http is only allowed for a loopback host"
+    return "base_url must use https"
+
+
+class _SameHostRedirect(urllib.request.HTTPRedirectHandler):
+    """Follow redirects only when the host does not change."""
+
+    def __init__(self, origin: str) -> None:
+        super().__init__()
+        self.origin = origin.lower()
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if _host(newurl) != self.origin:
+            return None
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _endpoint(spec, base_url: str) -> Tuple[str, Dict[str, str], str]:
+    """Return (url, headers-without-key, note).
+
+    Headers that carry the key are added by the caller so this function can be
+    tested without a secret. `note` is a user-visible caveat, or "".
     """
+    kind = getattr(spec, "test_kind", "openai")
+    provider_id = getattr(spec, "id", "")
+    root = base_url.rstrip("/")
+    note = ""
+    headers = {"Accept": "application/json", "User-Agent": "plumbcenter"}
+
+    if kind == "ollama":
+        return root + "/api/tags", headers, note
+    if kind == "anthropic":
+        path = "/models" if root.endswith("/v1") else "/v1/models"
+        headers["anthropic-version"] = "2023-06-01"
+        return root + path, headers, note
+    if kind == "gemini":
+        # x-goog-api-key is the documented header. The key is not placed in the query.
+        return root + "/models", headers, note
+    if provider_id == "openrouter":
+        # GET /api/v1/key is the documented authenticated check. /models is public.
+        return root + "/key", headers, note
+    if provider_id == "kilo":
+        # VERIFY: https://kilo.ai/gateway documents GET /models with no authentication.
+        note = "Kilo documents GET /models as a public list, so a 200 does not prove the key."
+    if provider_id == "zai":
+        # VERIFY: https://docs.z.ai/api-reference/introduction documents Bearer auth and
+        # POST /chat/completions. It does not publish a models-list GET. This probe uses
+        # the OpenAI-compatible GET {base}/models on the documented base URL.
+        note = "Z.ai does not publish a models-list GET; this probes GET /models."
+    return root + "/models", headers, note
+
+
+def _auth_headers(spec, api_key: str) -> Dict[str, str]:
+    kind = getattr(spec, "test_kind", "openai")
+    if kind == "ollama" or not api_key:
+        return {}
+    if kind == "anthropic":
+        return {"x-api-key": api_key}
+    if kind == "gemini":
+        return {"x-goog-api-key": api_key}
+    return {"Authorization": "Bearer " + api_key}
+
+
+def test_connection(spec, api_key, base_url=None, timeout=10.0) -> TestResult:
+    """Probe `spec` with a cheap GET. HTTP failures return ok=False and do not raise."""
+    key = str(api_key).strip() if api_key else ""
     try:
-        timeout = float(timeout)
+        timeout_s = float(timeout)
     except (TypeError, ValueError):
         return TestResult(False, "bad_timeout", "timeout must be a number", 0)
-    if timeout <= 0:
+    if timeout_s <= 0:
         return TestResult(False, "bad_timeout", "timeout must be positive", 0)
 
     needs_key = bool(getattr(spec, "needs_key", True))
-    key = (str(api_key).strip() if api_key else "")
     if needs_key and not key:
         return TestResult(False, "no_key", "API key is required", 0)
 
-    url = base_url or getattr(spec, "base_url", "") or ""
-    if not url:
+    url_base = (base_url or getattr(spec, "base_url", "") or "").strip()
+    if not url_base:
         return TestResult(False, "no_url", "base_url is required", 0)
+    problem = _check_url(url_base)
+    if problem:
+        return TestResult(False, "bad_url", _redact(problem, key), 0)
 
-    # VERIFY: replace this stub with the official models/tags request for spec.test_kind.
-    # Do not log or return `key`.
-    _ = (url, timeout, key)
-    return TestResult(
-        False,
-        "not_implemented",
-        _redact("Connection test is not implemented yet", key or None),
-        0,
-    )
+    target, headers, note = _endpoint(spec, url_base)
+    if _host(target) != _host(url_base):
+        return TestResult(False, "bad_url", "probe host does not match base_url", 0)
+    headers = dict(headers)
+    headers.update(_auth_headers(spec, key))
+
+    request = urllib.request.Request(target, headers=headers, method="GET")
+    opener = urllib.request.build_opener(_SameHostRedirect(_host(url_base)))
+    started = time.monotonic()
+    try:
+        with opener.open(request, timeout=timeout_s) as response:
+            status = int(getattr(response, "status", 0) or response.getcode() or 0)
+            response.read(2048)
+    except urllib.error.HTTPError as exc:
+        status = int(exc.code)
+        try:
+            exc.read(2048)
+        except Exception:
+            pass
+    except Exception as exc:
+        elapsed = int((time.monotonic() - started) * 1000)
+        text = _redact(str(exc) or exc.__class__.__name__, key)
+        return TestResult(False, "error", text or "connection failed", elapsed)
+
+    elapsed = int((time.monotonic() - started) * 1000)
+    ok = 200 <= status < 300
+    message = "Connection ok" if ok else f"HTTP {status}"
+    if ok and note:
+        message = message + ". " + note
+    return TestResult(ok, str(status), _redact(message, key), elapsed)
