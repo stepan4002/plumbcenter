@@ -11,7 +11,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
-from .registry import AppSpec, REGISTRY, get_app
+from .registry import AppSpec, GITHUB_OWNER, REGISTRY, get_app
 
 
 @dataclass
@@ -260,6 +260,90 @@ def github_metadata(app: AppSpec, timeout: float = 5.0, cache_ttl: float = 600) 
         pass
     
     return result
+
+
+def _hub_repo(root=None) -> Path:
+    """This PlumbCenter checkout. ``root`` is the workspace the GUI passes."""
+    here = Path(__file__).resolve().parent.parent
+    if (here / ".git").exists():
+        return here
+    if root is not None:
+        candidate = Path(root)
+        if (candidate / ".git").exists() and (candidate / "plumbcenter" / "__init__.py").is_file():
+            return candidate
+        nested = candidate / "plumbcenter"
+        if (nested / ".git").exists():
+            return nested
+    return here
+
+
+def _version_tuple(value: str):
+    text = value.strip().lstrip("vV")
+    parts = []
+    for piece in text.split("."):
+        digits = ""
+        for ch in piece:
+            if ch.isdigit():
+                digits += ch
+            else:
+                break
+        if digits == "":
+            return None
+        parts.append(int(digits))
+    return tuple(parts) if parts else None
+
+
+def self_status(root=None) -> dict:
+    """This hub checkout compared with the GitHub latest release. Never raises.
+
+    ``root`` is accepted because callers pass the workspace root. The repository
+    checked is this package's checkout, not an app under that workspace.
+    """
+    from . import __version__
+
+    repo = _hub_repo(root)
+    latest = None
+    error = ""
+    try:
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{GITHUB_OWNER}/plumbcenter/releases/latest",
+            headers={
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "plumbcenter",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.load(resp)
+            tag = data.get("tag_name")
+            latest = tag if isinstance(tag, str) and tag else None
+    except urllib.error.HTTPError as exc:
+        # No published release (or the repo is not visible) is not a transport failure.
+        if exc.code != 404:
+            error = f"HTTP {exc.code}"
+    except Exception as exc:
+        error = str(exc) or exc.__class__.__name__
+
+    current = __version__
+    update_available = False
+    if latest and not error:
+        current_v = _version_tuple(current)
+        latest_v = _version_tuple(latest)
+        if current_v is not None and latest_v is not None:
+            update_available = latest_v > current_v
+        else:
+            update_available = latest.lstrip("vV") != current.lstrip("vV")
+
+    return {
+        "current_version": current,
+        "version": current,
+        "latest_release": latest,
+        "update_available": update_available,
+        "error": error,
+        "branch": _get_branch(repo),
+        "commit": _get_commit(repo),
+        "dirty": _is_dirty(repo),
+        "path": str(repo),
+    }
 
 
 def remote_state(path: Path, timeout: int = 15) -> dict:
